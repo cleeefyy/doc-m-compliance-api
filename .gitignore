@@ -1,0 +1,6 @@
+__pycache__/
+outputs/*.json
+*.log
+.DS_Store
+.env
+
