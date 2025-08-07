@@ -203,14 +203,28 @@ class DocumentMComplianceChecker:
         
         if geometry_data.get("dimensions"):
             dims = geometry_data["dimensions"]
-            summary += f"- Room dimensions: {dims.get('width', 0):.1f}mm x {dims.get('length', 0):.1f}mm\n"
-            summary += f"- Room area: {dims.get('area', 0):.1f}mm²\n"
+            if isinstance(dims, dict):
+                summary += f"- Room dimensions: {dims.get('width', 0):.1f}mm x {dims.get('length', 0):.1f}mm\n"
+                summary += f"- Room area: {dims.get('area', 0):.1f}mm²\n"
+            elif isinstance(dims, list):
+                summary += f"- Room dimensions: {len(dims)} dimension(s)\n"
+        
+        if geometry_data.get("rooms"):
+            rooms = geometry_data["rooms"]
+            if isinstance(rooms, list) and rooms:
+                room = rooms[0]  # Use first room
+                summary += f"- Room area: {room.get('area', 0):.1f}m²\n"
+                summary += f"- Room dimensions: {room.get('width', 0):.1f}m x {room.get('length', 0):.1f}m\n"
         
         if geometry_data.get("section_heights_mm"):
             heights = geometry_data["section_heights_mm"]
             summary += "- Section heights:\n"
-            for item, height in heights.items():
-                summary += f"  - {item}: {height}mm\n"
+            if isinstance(heights, dict):
+                for item, height in heights.items():
+                    summary += f"  - {item}: {height}mm\n"
+            elif isinstance(heights, list):
+                for i, height in enumerate(heights):
+                    summary += f"  - Height {i+1}: {height}mm\n"
         
         return summary
     
