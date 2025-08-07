@@ -8,11 +8,17 @@ import numpy as np
 from typing import List, Dict, Any
 from datetime import datetime
 
-# Load environment variables
+# Load environment variables (will work with or without .env file)
 load_dotenv()
 
 # Initialize OpenAI client
-client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    print("⚠️  Warning: OPENAI_API_KEY not found in environment variables")
+    print("   Please set OPENAI_API_KEY in Render environment variables")
+    client = None
+else:
+    client = openai.OpenAI(api_key=api_key)
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for PyRevit requests
@@ -47,8 +53,9 @@ class DocumentMComplianceChecker:
                 for line in f:
                     embedding_data = json.loads(line)
                     self.embeddings.append(embedding_data["embedding"])
+            print(f"✅ Loaded {len(self.chunks)} chunks and {len(self.embeddings)} embeddings")
         except Exception as e:
-            print(f"Error loading chunks: {e}")
+            print(f"❌ Error loading chunks: {e}")
             # Use simplified mode if embeddings not available
             self.chunks = []
             self.embeddings = []
@@ -66,8 +73,9 @@ class DocumentMComplianceChecker:
                 for line in f:
                     embedding_data = json.loads(line)
                     self.diagram_embeddings.append(embedding_data["embedding"])
+            print(f"✅ Loaded {len(self.diagrams)} diagrams and {len(self.diagram_embeddings)} diagram embeddings")
         except Exception as e:
-            print(f"Error loading diagrams: {e}")
+            print(f"❌ Error loading diagrams: {e}")
             self.diagrams = []
             self.diagram_embeddings = []
     
@@ -84,10 +92,12 @@ class DocumentMComplianceChecker:
                 dimension = all_embeddings.shape[1]
                 self.index = faiss.IndexFlatIP(dimension)
                 self.index.add(all_embeddings)
+                print(f"✅ Built FAISS index with {len(all_embeddings)} vectors")
             else:
                 self.index = None
+                print("⚠️  No embeddings available for search index")
         except Exception as e:
-            print(f"Error building search index: {e}")
+            print(f"❌ Error building search index: {e}")
             self.index = None
     
     def _semantic_search(self, query: str, top_k: int = 5) -> List[Dict]:
@@ -129,11 +139,22 @@ class DocumentMComplianceChecker:
             
             return results
         except Exception as e:
-            print(f"Error in semantic search: {e}")
+            print(f"❌ Error in semantic search: {e}")
             return []
     
     def check_compliance(self, geometry_data: Dict[str, Any]) -> Dict[str, Any]:
         """Check geometry against Document M compliance requirements."""
+        
+        # Check if OpenAI client is available
+        if not client:
+            return {
+                "compliance_status": "Error",
+                "issues": ["OpenAI API key not configured"],
+                "suggestions": ["Please set OPENAI_API_KEY environment variable in Render"],
+                "full_report": "Error: OpenAI API key not configured. Please set OPENAI_API_KEY in Render environment variables.",
+                "geometry_summary": self._prepare_geometry_summary(geometry_data),
+                "relevant_regulations": []
+            }
         
         # Prepare geometry summary
         geometry_summary = self._prepare_geometry_summary(geometry_data)
@@ -355,7 +376,9 @@ Format your response as a structured analysis with clear sections, citing specif
         return suggestions[:5]  # Limit to 5 suggestions
 
 # Initialize the compliance checker
+print("🚀 Initializing Document M Compliance Checker...")
 checker = DocumentMComplianceChecker()
+print("✅ Compliance checker initialized!")
 
 @app.route('/')
 def home():
@@ -363,6 +386,7 @@ def home():
     return jsonify({
         "message": "Document M Compliance Checker API",
         "version": "1.0",
+        "status": "running",
         "endpoints": {
             "POST /api/compliance/check": "Check geometry compliance",
             "GET /api/health": "Health check"
@@ -403,7 +427,8 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "service": "Document M Compliance Checker API",
-        "version": "1.0"
+        "version": "1.0",
+        "openai_configured": client is not None
     })
 
 if __name__ == '__main__':
