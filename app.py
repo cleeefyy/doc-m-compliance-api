@@ -1,60 +1,44 @@
 from flask import Flask, request, jsonify
 import openai
 import os
+import json # Import the json library
 
 app = Flask(__name__)
 
 # It's better to get the API key from environment variables for security
 openai.api_key = os.getenv("OPENAI_API_KEY", "YOUR_DEFAULT_API_KEY_HERE")
 
-def generate_compliance_script(room_data_json):
+def generate_compliance_script(room_data):
     """
-    Generates a pyRevit Python script based on room data using an LLM.
+    Generates a pyRevit Python script based on room data.
+    This version is compatible with IronPython and correctly injects the room data.
     """
     try:
-        # A more detailed prompt explaining the context and desired output
-        prompt = f"""
-        You are an expert in building compliance and Revit automation.
-        Based on the following JSON data describing rooms in a Revit model, generate a complete, standalone pyRevit Python script.
-        The script should check for a basic compliance rule: ensure every room has an area greater than 100 square feet.
-        For each room that fails this check, the script should print a warning message to the console.
-        The script must be compatible with IronPython 2.7.
-
-        Room data:
-        {room_data_json}
-
-        Generate only the Python code. Do not include any explanations or markdown formatting.
-        The script should start with the necessary imports (e.g., from Autodesk.Revit.DB import *).
-        """
-
-        # This is a placeholder for a real LLM call.
-        # In a real application, you would use a library like 'openai' to call the model.
         # For this example, we will generate a static, corrected script.
+        # In a real-world scenario, you would use an LLM to generate this dynamically,
+        # ensuring the output does not use f-strings.
 
-        # --- STATIC SCRIPT GENERATION (Placeholder for LLM) ---
-        
-        # This generated script is now written to be compatible with IronPython.
-        # It iterates through the provided room data.
-        
-        script_template = """
-# -*- coding: utf-8 -*-
+        # Convert the incoming room_data (a Python list of dicts) into a JSON string representation
+        # that can be embedded directly into the script.
+        room_data_as_json_string = json.dumps(room_data)
+
+        script_template = """# -*- coding: utf-8 -*-
 from Autodesk.Revit.DB import *
 from Autodesk.Revit.UI import TaskDialog
+import json
 
-def check_room_areas(room_data):
-    doc = __revit__.ActiveUIDocument.Document
-    uidoc = __revit__.ActiveUIDocument
-
+def check_room_areas(room_data_list):
     print("--- Starting Room Area Compliance Check ---")
     non_compliant_rooms = []
 
-    for room_info in room_data:
+    for room_info in room_data_list:
         room_name = room_info.get('Name', 'Unnamed')
         room_area = room_info.get('Area', 0.0)
         
         # Compliance rule: Area must be > 100 sq ft
         if room_area <= 100.0:
             non_compliant_rooms.append(room_name)
+            # This print statement uses .format() for IronPython compatibility
             print("WARNING: Room '{}' has an area of {} sq ft, which is not compliant.".format(room_name, room_area))
 
     if non_compliant_rooms:
@@ -65,19 +49,11 @@ def check_room_areas(room_data):
     
     print("--- Compliance Check Finished ---")
 
-# The JSON data from the C# add-in would be passed here in a real scenario.
-# For this example, we'll use the data sent in the request.
-room_data_from_request = {room_data_json}
-check_room_areas(room_data_from_request)
-"""
-        # For the purpose of this example, we return a fixed script.
-        # The f-strings that caused the original error have been replaced with .format().
-        # This is a simplified example. A real LLM would generate this dynamically.
-        
-        # Example of the corrected print statements that would be in a dynamically generated script:
-        # print("✓ Door {} analyzed successfully".format(door.Id))
-        # print("✗ Error processing door: {}".format(str(e)))
-        
+# The JSON data from the C# add-in is now correctly embedded into the script.
+room_data_from_addin = {data_placeholder}
+check_room_areas(room_data_from_addin)
+""".format(data_placeholder=room_data_as_json_string) # Use .format() to inject the data
+
         return script_template
 
     except Exception as e:
