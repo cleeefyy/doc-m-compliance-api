@@ -1,7 +1,2 @@
-__pycache__/
-outputs/*.json
-*.log
-.DS_Store
-.env
-
-.env
+# Visual Studio generated files
+.vs/
