@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 import openai
 import os
-import json # Import the json library
+import json
 
 app = Flask(__name__)
 
@@ -10,54 +10,126 @@ openai.api_key = os.getenv("OPENAI_API_KEY", "YOUR_DEFAULT_API_KEY_HERE")
 
 def generate_compliance_script(room_data):
     """
-    Generates a pyRevit Python script based on room data.
-    This version is compatible with IronPython and correctly injects the room data.
+    Generates a pyRevit Python script that checks for a wheelchair turning circle
+    and draws a visual overlay in non-compliant rooms.
     """
     try:
-        # For this example, we will generate a static, corrected script.
-        # In a real-world scenario, you would use an LLM to generate this dynamically,
-        # ensuring the output does not use f-strings.
+        # Convert the incoming room data into a nicely formatted string for the prompt
+        room_data_str = json.dumps(room_data, indent=2)
 
-        # Convert the incoming room_data (a Python list of dicts) into a JSON string representation
-        # that can be embedded directly into the script.
-        room_data_as_json_string = json.dumps(room_data)
+        # This is a placeholder for a real LLM call. In a real application, you would
+        # send the prompt below to a powerful model like GPT-4 or a fine-tuned equivalent.
+        # For this example, we will generate a static, corrected script that demonstrates the final output.
 
-        script_template = """# -*- coding: utf-8 -*-
+        prompt_template = f"""
+You are an expert Revit API developer specializing in pyRevit scripts for building compliance.
+Your task is to generate a complete, standalone IronPython 2.7 script for pyRevit.
+
+The user has provided the following JSON data representing rooms in a Revit model:
+{room_data_str}
+
+The script must perform the following actions:
+1.  Find all 'Room' elements in the current Revit document.
+2.  For each room, check if its area is less than the area required for a 1500mm diameter turning circle (approximately 1.77 square meters or 19 square feet).
+3.  If a room is non-compliant (too small), create a visual overlay inside that room.
+4.  The overlay must be a red, semi-transparent cylinder representing the 1500mm turning circle. Use the 'DirectShape' API to create this geometry.
+5.  All model modifications (creating DirectShapes) must be wrapped in a Revit Transaction.
+6.  The script must be fully compatible with IronPython 2.7 (e.g., use .format() instead of f-strings).
+7.  Print clear messages to the console for both compliant and non-compliant rooms.
+
+Generate only the Python code. Do not include any explanations.
+"""
+
+        # --- STATIC SCRIPT GENERATION (Placeholder for a real LLM call) ---
+        # A real LLM would generate the script below based on the prompt. This template
+        # serves as the ideal output we want the LLM to produce.
+
+        generated_script = """# -*- coding: utf-8 -*-
 from Autodesk.Revit.DB import *
 from Autodesk.Revit.UI import TaskDialog
-import json
+import math
 
-def check_room_areas(room_data_list):
-    print("--- Starting Room Area Compliance Check ---")
-    non_compliant_rooms = []
+# --- Configuration ---
+TURNING_CIRCLE_DIAMETER_MM = 1500.0
+MIN_AREA_SQ_FEET = 19.0 # Approx. area for a 1500mm circle
+OVERLAY_COLOR = Color(255, 0, 0) # Red
+OVERLAY_TRANSPARENCY = 80 # 0-100
 
-    for room_info in room_data_list:
-        room_name = room_info.get('Name', 'Unnamed')
-        room_area = room_info.get('Area', 0.0)
-        
-        # Compliance rule: Area must be > 100 sq ft
-        if room_area <= 100.0:
-            non_compliant_rooms.append(room_name)
-            # This print statement uses .format() for IronPython compatibility
-            print("WARNING: Room '{}' has an area of {} sq ft, which is not compliant.".format(room_name, room_area))
-
-    if non_compliant_rooms:
-        message = "The following rooms are not compliant (Area <= 100 sq ft):\\n\\n" + "\\n".join(non_compliant_rooms)
-        TaskDialog.Show("Compliance Check Failed", message)
-    else:
-        TaskDialog.Show("Compliance Check Passed", "All rooms meet the minimum area requirement.")
+def create_turning_circle_overlay(doc, center_point):
+    \"\"\"Creates a DirectShape cylinder to visualize the turning circle.\"\"\"
+    app = doc.Application
     
-    print("--- Compliance Check Finished ---")
+    # Convert diameter from mm to internal feet
+    radius_feet = (TURNING_CIRCLE_DIAMETER_MM / 2) / 304.8
+    height_feet = 0.1 # A thin disc for visualization
+    
+    # Create a cylinder profile
+    circle = Ellipse.Create(center_point, radius_feet, radius_feet, XYZ.BasisX, XYZ.BasisY, 0, 2 * math.pi)
+    solid = GeometryCreationUtilities.CreateExtrusionGeometry([circle], XYZ.BasisZ, height_feet)
+    
+    # Create the DirectShape
+    ds = DirectShape.CreateElement(doc, ElementId(BuiltInCategory.OST_GenericModel))
+    ds.SetShape([solid])
+    ds.Name = "Compliance Overlay - Turning Circle"
+    
+    # Set visual style (color and transparency)
+    ogs = OverrideGraphicSettings()
+    ogs.SetSurfaceForegroundPatternColor(OVERLAY_COLOR)
+    ogs.SetSurfaceTransparency(OVERLAY_TRANSPARENCY)
+    doc.ActiveView.SetElementOverrides(ds.Id, ogs)
+    
+    return ds
 
-# The JSON data from the C# add-in is now correctly embedded into the script.
-room_data_from_addin = {data_placeholder}
-check_room_areas(room_data_from_addin)
-""".format(data_placeholder=room_data_as_json_string) # Use .format() to inject the data
+# --- Main Execution ---
+doc = __revit__.ActiveUIDocument.Document
+uidoc = __revit__.ActiveUIDocument
 
-        return script_template
+print("--- Starting Turning Circle Compliance Check ---")
+
+# Use a FilteredElementCollector to get all rooms
+room_collector = FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Rooms).WhereElementIsNotElementType()
+non_compliant_rooms = []
+
+# Start a transaction to allow model changes (creating DirectShapes)
+t = Transaction(doc, "Create Compliance Overlays")
+t.Start()
+
+try:
+    for room in room_collector:
+        # Ensure it's a valid, placed room with a location
+        if room.Area > 0 and room.Location is not None:
+            room_name = room.Name
+            room_area_sq_feet = room.Area
+            
+            if room_area_sq_feet < MIN_AREA_SQ_FEET:
+                non_compliant_rooms.append(room_name)
+                print("WARNING: Room '{}' is NON-COMPLIant. Area: {:.2f} sq ft.".format(room_name, room_area_sq_feet))
+                
+                # Find room center to place the overlay
+                location_point = room.Location.Point
+                create_turning_circle_overlay(doc, location_point)
+            else:
+                print("OK: Room '{}' is compliant. Area: {:.2f} sq ft.".format(room_name, room_area_sq_feet))
+
+    t.Commit()
+    print("--- Transaction Committed Successfully ---")
+
+except Exception as e:
+    t.RollBack()
+    print("An error occurred, transaction rolled back: {}".format(str(e)))
+
+# --- Final Report ---
+if non_compliant_rooms:
+    message = "The following rooms are too small for a 1500mm turning circle:\\n\\n" + "\\n".join(non_compliant_rooms)
+    TaskDialog.Show("Compliance Check Failed", message)
+else:
+    TaskDialog.Show("Compliance Check Passed", "All rooms are large enough for a 1500mm turning circle.")
+
+print("--- Compliance Check Finished ---")
+"""
+        return generated_script
 
     except Exception as e:
-        # This is the corrected f-string for the error message itself
         error_message = "Error generating script: {}".format(str(e))
         print(error_message)
         return "# An error occurred while generating the script: {}".format(str(e))
@@ -65,18 +137,10 @@ check_room_areas(room_data_from_addin)
 
 @app.route('/api/llm', methods=['POST'])
 def handle_request():
-    """
-    API endpoint to receive data from the Revit add-in.
-    """
     if not request.json:
         return jsonify({"error": "Invalid request: no JSON payload"}), 400
-
     room_data = request.json
-    
-    # Generate the compliance script
     generated_script = generate_compliance_script(room_data)
-    
-    # Return the generated script as plain text
     return generated_script, 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
 if __name__ == '__main__':
